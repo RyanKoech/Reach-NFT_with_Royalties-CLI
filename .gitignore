@@ -1,7 +1,9 @@
 build/
 node_modules/
 tls/
+.dockerignore
+Dockerfile
 .reach
 .vscode
 build
-reach
+Reach
