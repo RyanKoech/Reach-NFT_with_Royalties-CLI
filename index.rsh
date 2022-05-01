@@ -1,84 +1,109 @@
 'reach 0.1';
+'use strict';
 
-const BaseUser = {
-  ...hasRandom,
-  getSenderAddress: Address
+const Common =
+    { seeOutcome: Fun([UInt, Address], Null),
+      showBid: Fun([UInt, Address], Null),
+      informTimeout: Fun([], Null),
+      isAuctionOn: Fun([], Bool)
+    };
+
+const handlePayOut = (royalty, price, Creator, Owner) => {
+  const creatorShare = (royalty * price) / 100;
+  const ownerShare = price - creatorShare;
+  transfer(creatorShare).to(Creator)
+  transfer(ownerShare).to(Owner)
 }
 
+export const main =
+  Reach.App(
+    {},
+    [Participant('Creator', {
+      ...Common,
+      getId: UInt,
+      createNFT: Fun([], Object({basePrice: UInt, royalty: UInt, uri: Bytes(80) })),
+      deadline: UInt,
+    }),
+     ParticipantClass('Bidder', {
+       ...Common,
+       getBid: Fun([UInt], UInt),
+     }),
+     View('NFT', {
+       owner: Address,
+     }),
+    ],
 
-const NFT_Template = {
-  owner: "0x0",
-  creator: "0x0",
-  // name : "",
-  // uri: "",
-  price: 0,
-  royalty: 0
-}
+    (Creator, Bidder, vNFT) => {
+      Creator.only(() => {
+          const id = declassify(interact.getId);
+          const deadline = declassify(interact.deadline);
+          const nftInfo = declassify(interact.createNFT());
+          // assert(nftInfo.royalty >= 0 && nftInfo.royalty < 50);
+      });
+      Creator.publish(id, deadline, nftInfo);
 
-export const main = Reach.App(() => {
+      var [owner, price, lastBidder, keepGoing, auctionOn] = [Creator, nftInfo.basePrice, Creator, true, false];
+      { vNFT.owner.set(owner); };
+      invariant(balance() == 0);
+      while (keepGoing) {
+        if(auctionOn === false) {
+          commit();
 
+          each([Creator, Bidder], () => {
+            const isAuctionOn = this === owner ? declassify(interact.isAuctionOn()) : true;
+          });
 
-  const Creator = Participant('Creator', {
-    ...BaseUser,
-    deadline: UInt,
-    createNFT: Fun([], Object({owner: Address, creator: Address, price: UInt, royalty: UInt }))
-    // Specify Alice's interact interface here
-  });
+          Anybody.publish(isAuctionOn).when(owner == this).timeout(false);
+          if (!isAuctionOn) {
+            each([Creator, Bidder], () => {
+              interact.seeOutcome(price,owner);
+            });
+            [owner, price, lastBidder, keepGoing, auctionOn] = [owner, price, lastBidder, false, auctionOn];            
+            continue;
+          };
+        };
+        commit();
 
-  const Owner = Participant('Owner',{
-    ...BaseUser,
-    setNFTPrice: Fun([], UInt),
-    isOwner: Fun([Bool], Null)
-  });
+        Bidder.only(() => {
+          const bid = (this !== lastBidder && this !== owner) ? declassify(interact.getBid(price)) : price;
+          const winner = (this !== lastBidder && this !== owner) ? this : lastBidder;
+        });
 
-  const Buyer = Participant('Buyer', {
-    ...BaseUser,
-    getNFTInfo: Fun([Object({owner: Address, creator: Address, price: UInt, royalty: UInt })], Null),
-    getNFTPrice: Fun([], UInt),
-    buyNFT: Fun([UInt], Null)
-    // Specify Bob's interact interface here
-  });
-  init();
+        Bidder.publish(bid, winner)
+          .when(bid>price && this !== lastBidder)
+          .timeout(deadline, () => {
+            each([Creator, Bidder], () => {
+              interact.seeOutcome(price, lastBidder);
+            });
 
-  // BEGIN OF CODE WORKFLOW
-  Creator.only(() =>{
-    const nft = declassify(interact.createNFT());
-    // assert(nft.royalty >= 0 && nft.royalty < 50);
-    const deadline = declassify(interact.deadline)
-  })
-  // The first one to publish deploys the contract
-  Creator.publish(nft, deadline);
-  commit();
+            Bidder.pay(price).when(lastBidder == this).timeout(100, () => {
+              each([Creator, Bidder], () => {
+                interact.informTimeout();
+              });
 
-  Buyer.only(()=>{
-    interact.getNFTInfo(nft);
-  })
-  // The second one to publish always attaches
-  Buyer.publish();
-  commit();
+              Bidder.publish();
+              [owner, price, lastBidder, keepGoing, auctionOn] = [owner, nftInfo.basePrice, owner, true, false]
+              continue;
+            });
+            // transfer(price).to(owner);
+            handlePayOut(nftInfo.royalty, price, Creator, owner);
 
-  Buyer.only(()=>{
-    interact.buyNFT(nft.price)
-    const buyerAddress = declassify(interact.getSenderAddress);
-  });
-  Buyer.publish(buyerAddress);
-  commit();
+            [owner, price, lastBidder, keepGoing, auctionOn] = [lastBidder, nftInfo.basePrice, lastBidder, true, false]
+            continue;
+          })
+        commit();
 
-  Buyer.pay(nft.price)
-    .timeout(relativeTime(deadline), () => {});
-  transfer(nft.price).to(nft.owner);
-  commit();
-  // Owner.only(() => {
-  //   // const newPrice = nft.price
+        each([Creator, Bidder], () => {
+          interact.showBid(bid, winner);
+        });
 
-  //   // newPrice = 0
-  //   // if(interact.getSenderAddress == nft.owner){
-  //   //   const newPrice = declassify(interact.setNFTPrice())
-  //   // }
-  // });
-  // Owner.publish();
-  // commit();
-  
-  // write your program here
-  exit();
-});
+        Anybody.publish();
+
+        [owner, price, lastBidder, keepGoing, auctionOn] = [owner, bid, winner, true, true]
+        continue;
+      };
+      
+      commit();
+      exit();
+    }
+  );
