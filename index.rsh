@@ -71,12 +71,12 @@ export const main =
 
         Bidder.publish(bid, winner)
           .when(bid>price && this !== lastBidder)
-          .timeout(deadline, () => {
+          .timeout(relativeTime(deadline), () => {
             each([Creator, Bidder], () => {
               interact.seeOutcome(price, lastBidder);
             });
 
-            Bidder.pay(price).when(lastBidder == this).timeout(100, () => {
+            Bidder.pay(price).when(lastBidder == this).timeout(relativeTime(100), () => {
               each([Creator, Bidder], () => {
                 interact.informTimeout();
               });
