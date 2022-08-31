@@ -21,12 +21,13 @@ export const main =
     [Participant('Creator', {
       ...Common,
       getId: UInt,
-      createNFT: Fun([], Object({basePrice: UInt, royalty: UInt, uri: Bytes(80) })),
+      createNFT: Fun([], Object({basePrice: UInt, royalty: UInt, uri: Bytes(100) })),
       deadline: UInt,
     }),
      ParticipantClass('Bidder', {
        ...Common,
        getBid: Fun([UInt], UInt),
+       getNftUri: Fun([Bytes(100)], Null)
      }),
      View('NFT', {
        owner: Address,
@@ -41,6 +42,12 @@ export const main =
           // assert(nftInfo.royalty >= 0 && nftInfo.royalty < 50);
       });
       Creator.publish(id, deadline, nftInfo);
+      commit();
+
+      Bidder.only(() => {
+        interact.getNftUri(nftInfo.uri)
+      });
+      Bidder.publish();
 
       var [owner, price, lastBidder, keepGoing, auctionOn] = [Creator, nftInfo.basePrice, Creator, true, false];
       { vNFT.owner.set(owner); };

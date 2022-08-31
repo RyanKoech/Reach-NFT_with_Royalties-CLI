@@ -130,6 +130,10 @@ import * as backend from './build/index.main.mjs';
             return price;
         }
 
+        Interact.getNftUri = (uri) => {
+            console.log("The bidder sees the nft uri as : " + uri)
+        }
+
     }
 
     const part = isCreator ? ctc.p.Creator : ctc.p.Bidder;
