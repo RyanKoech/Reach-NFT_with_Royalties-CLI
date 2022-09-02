@@ -7,3 +7,5 @@ Dockerfile
 .vscode
 build
 reach
+index2.rsh
+index2.mjs
